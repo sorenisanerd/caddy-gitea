@@ -53,15 +53,15 @@ func NewClient(serverURL, token, giteapages, giteapagesAllowAll string) (*Client
 	}, nil
 }
 
-func (c *Client) Open(owner, repo, filepath, ref string, compatibilityMode bool) (fs.File, error) {
+func (c *Client) Open(owner, repo string, filepath *string, ref string, compatibilityMode bool) (fs.File, error) {
 	// if repo is empty they want to have the gitea-pages repo
 	if repo == "" {
 		repo = c.giteapages
 	}
 
 	// if filepath is empty they want to have the index.html
-	if filepath == "" {
-		filepath = "index.html"
+	if *filepath == "" {
+		*filepath = "index.html"
 	}
 
 	// we need to check if the repo exists (and allows access)
@@ -112,12 +112,12 @@ func (c *Client) Open(owner, repo, filepath, ref string, compatibilityMode bool)
 		return nil, fs.ErrNotExist
 	}
 
-	res, err := c.getRawFileOrLFS(owner, repo, filepath, ref)
+	res, err := c.getRawFileOrLFS(owner, repo, *filepath, ref)
 	if err != nil {
 		return nil, err
 	}
 
-	if strings.HasSuffix(filepath, ".md") {
+	if strings.HasSuffix(*filepath, ".md") {
 		res, err = handleMD(res)
 		if err != nil {
 			return nil, err
@@ -126,7 +126,7 @@ func (c *Client) Open(owner, repo, filepath, ref string, compatibilityMode bool)
 
 	return &openFile{
 		content: res,
-		name:    filepath,
+		name:    *filepath,
 	}, nil
 }
 

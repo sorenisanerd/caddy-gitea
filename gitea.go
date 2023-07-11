@@ -93,7 +93,7 @@ func (m Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhtt
 		"filePath", filePath,
 		"ref", ref)
 
-	f, err := m.Client.Open(owner, repo, filePath, ref, m.Domain == "")
+	f, err := m.Client.Open(owner, repo, &filePath, ref, m.Domain == "")
 	if err != nil {
 		return caddyhttp.Error(http.StatusNotFound, err)
 	}

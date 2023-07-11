@@ -2,7 +2,9 @@ package gitea
 
 import (
 	"io"
+	"mime"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/42wim/caddy-gitea/pkg/gitea"
@@ -96,6 +98,10 @@ func (m Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhtt
 		return caddyhttp.Error(http.StatusNotFound, err)
 	}
 
+	extension := path.Ext(filePath)
+	mimeType := mime.TypeByExtension(extension)
+
+	w.Header().Add("content-type", mimeType)
 	_, err = io.Copy(w, f)
 
 	return err

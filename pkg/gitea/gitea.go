@@ -59,9 +59,14 @@ func (c *Client) Open(owner, repo string, filepath *string, ref string, compatib
 		repo = c.giteapages
 	}
 
-	// if filepath is empty they want to have the index.html
-	if *filepath == "" || *filepath == "/" {
-		*filepath = "index.html"
+	// if filepath is empty they want the root
+	if *filepath == "" {
+		*filepath = "/"
+	}
+
+	// If it's a dir, give them index.html
+	if strings.HasSuffix(*filepath, "/") {
+		*filepath += "index.html"
 	}
 
 	// we need to check if the repo exists (and allows access)

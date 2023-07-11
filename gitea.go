@@ -79,25 +79,11 @@ func (m *Middleware) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // ServeHTTP performs gitea content fetcher.
 func (m Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
-	// remove the domain if it's set (works fine if it's empty)
-	host := strings.TrimRight(strings.TrimSuffix(r.Host, m.Domain), ".")
-	h := strings.Split(host, ".")
+	var owner, repo, filePath string
 
-	fp := h[0] + r.URL.Path
-	ref := r.URL.Query().Get("ref")
+	owner, repo, filePath, ref := m.inferOwnerRepoPathAndRef(r)
 
-	// if we haven't specified a domain, do not support repo.username and branch.repo.username
-	if m.Domain != "" {
-		switch {
-		case len(h) == 2:
-			fp = h[1] + "/" + h[0] + r.URL.Path
-		case len(h) == 3:
-			fp = h[2] + "/" + h[1] + r.URL.Path
-			ref = h[0]
-		}
-	}
-
-	f, err := m.Client.Open(fp, ref)
+	f, err := m.Client.Open(owner, repo, filePath, ref, m.Domain == "")
 	if err != nil {
 		return caddyhttp.Error(http.StatusNotFound, err)
 	}
@@ -105,6 +91,58 @@ func (m Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhtt
 	_, err = io.Copy(w, f)
 
 	return err
+}
+
+func (m Middleware) inferOwnerRepoPathAndRef(r *http.Request) (owner, repo, filePath, ref string) {
+	// remove the domain if it's set (works fine if it's empty)
+	// if we haven't specified a domain, do not support repo.username and branch.repo.username
+	host := strings.TrimRight(strings.TrimSuffix(r.Host, m.Domain), ".")
+	h := strings.Split(host, ".")
+
+	owner = h[0]
+	ref = r.URL.Query().Get("ref")
+
+	// This maintains the legacy behavior from github.com/42wim/caddy-gitea
+	// that allows the repo to be specified as the first part of the path,
+	// but prevents subdirectories from being hosted.
+	if m.Domain == "" {
+		parts := strings.Split(r.URL.Path, "/")
+		switch {
+		case len(parts) == 1:
+			repo = ""
+			filePath = parts[0]
+		case len(parts) > 1:
+			repo = parts[0]
+			filePath = strings.Join(parts[1:], "/")
+		default:
+		}
+	} else {
+		// This is the new behavior which is closer to what you may
+		// know from Github Pages.
+		//
+		// There are three cases for the Host value:
+		// Given                          Inferred
+		// <owner>.domain                 ref=<default>, repo=<default>
+		// <repo>.<owner>.domain          ref=<default>
+		// <branch>.<repo>.<owner>.domain
+		//
+		// In all cases, filepath is simply URL.Path.
+
+		switch {
+		case len(h) == 1:
+			owner = h[0]
+			repo = ""
+		case len(h) == 2:
+			owner = h[1]
+			repo = h[0]
+		case len(h) == 3:
+			owner = h[2]
+			repo = h[1]
+			ref = h[0]
+		}
+		filePath = r.URL.Path
+	}
+	return owner, repo, filePath, ref
 }
 
 // Interface guards

@@ -14,6 +14,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+type AllowedBranches int
+
+const (
+	AllowedBranchesNone AllowedBranches = iota
+	AllowedBranchesLimited
+	AllowedBranchesAll
+)
+
 type Client struct {
 	serverURL          string
 	token              string
@@ -45,9 +53,7 @@ func NewClient(serverURL, token, giteapages, giteapagesAllowAll string) (*Client
 	}, nil
 }
 
-func (c *Client) Open(name, ref string) (fs.File, error) {
-	owner, repo, filepath := splitName(name)
-
+func (c *Client) Open(owner, repo, filepath, ref string, compatibilityMode bool) (fs.File, error) {
 	// if repo is empty they want to have the gitea-pages repo
 	if repo == "" {
 		repo = c.giteapages
@@ -60,25 +66,30 @@ func (c *Client) Open(name, ref string) (fs.File, error) {
 	}
 
 	// we need to check if the repo exists (and allows access)
-	limited, allowall := c.allowsPages(owner, repo)
-	if !limited && !allowall {
-		// if we're checking the gitea-pages and it doesn't exist, return 404
+	allowedBranches := c.allowsPages(owner, repo)
+	if allowedBranches == AllowedBranchesNone {
+		// if we're checking the default repo (usually
+		// "gitea-pages") and the desired branch doesn't
+		// exist, return 404
 		if repo == c.giteapages && !c.hasRepoBranch(owner, repo, c.giteapages) {
 			return nil, fs.ErrNotExist
 		}
 
-		// the repo didn't exist but maybe it's a filepath in the gitea-pages repo
-		// so we need to check if the gitea-pages repo exists
-		filepath = repo
-		repo = c.giteapages
+		if compatibilityMode {
+			// this is for the compatibility thing where the path
+			// *may* have a repo name in it, but in this case the
+			// first part of the path did not represent a valid
+			// repo, so we try the default repo
+			maybeRepo := c.giteapages
 
-		if ref == "" {
-			ref = c.giteapages
-		}
+			if ref == "" {
+				ref = c.giteapages
+			}
 
-		limited, allowall = c.allowsPages(owner, repo)
-		if !limited && !allowall || !c.hasRepoBranch(owner, repo, c.giteapages) {
-			return nil, fs.ErrNotExist
+			allowedBranches2 := c.allowsPages(owner, maybeRepo)
+			if allowedBranches2 == AllowedBranchesNone || !c.hasRepoBranch(owner, repo, c.giteapages) {
+				return nil, fs.ErrNotExist
+			}
 		}
 	}
 
@@ -87,7 +98,7 @@ func (c *Client) Open(name, ref string) (fs.File, error) {
 	if err := c.readConfig(owner, repo); err != nil {
 		// we don't need a config for gitea-pages
 		// no config is only exposing the gitea-pages branch
-		if repo != c.giteapages && !allowall {
+		if repo != c.giteapages && (allowedBranches < AllowedBranchesAll) {
 			return nil, err
 		}
 
@@ -98,7 +109,7 @@ func (c *Client) Open(name, ref string) (fs.File, error) {
 	// always overwrite the ref to the gitea-pages branch
 	if !hasConfig && (repo == c.giteapages || ref == c.giteapages) {
 		ref = c.giteapages
-	} else if !validRefs(ref, allowall) {
+	} else if !validRefs(ref, allowedBranches) {
 		return nil, fs.ErrNotExist
 	}
 
@@ -206,25 +217,25 @@ func (c *Client) hasRepoBranch(owner, repo, branch string) bool {
 	return b.Name == branch
 }
 
-func (c *Client) allowsPages(owner, repo string) (bool, bool) {
+func (c *Client) allowsPages(owner, repo string) AllowedBranches {
 	topics, err := c.repoTopics(owner, repo)
 	if err != nil {
-		return false, false
+		return AllowedBranchesNone
 	}
 
 	for _, topic := range topics {
 		if topic == c.giteapagesAllowAll {
-			return true, true
+			return AllowedBranchesAll
 		}
 	}
 
 	for _, topic := range topics {
 		if topic == c.giteapages {
-			return true, false
+			return AllowedBranchesLimited
 		}
 	}
 
-	return false, false
+	return AllowedBranchesNone
 }
 
 func (c *Client) readConfig(owner, repo string) error {
@@ -238,22 +249,8 @@ func (c *Client) readConfig(owner, repo string) error {
 	return viper.ReadConfig(bytes.NewBuffer(cfg))
 }
 
-func splitName(name string) (string, string, string) {
-	parts := strings.Split(name, "/")
-
-	// parts contains: ["owner", "repo", "filepath"]
-	switch len(parts) {
-	case 1:
-		return parts[0], "", ""
-	case 2:
-		return parts[0], parts[1], ""
-	default:
-		return parts[0], parts[1], strings.Join(parts[2:], "/")
-	}
-}
-
-func validRefs(ref string, allowall bool) bool {
-	if allowall {
+func validRefs(ref string, allowedBranches AllowedBranches) bool {
+	if allowedBranches == AllowedBranchesAll {
 		return true
 	}
 

@@ -60,7 +60,7 @@ func (c *Client) Open(owner, repo string, filepath *string, ref string, compatib
 	}
 
 	// if filepath is empty they want to have the index.html
-	if *filepath == "" {
+	if *filepath == "" || *filepath == "/" {
 		*filepath = "index.html"
 	}
 

@@ -57,7 +57,6 @@ func (c *Client) Open(owner, repo, filepath, ref string, compatibilityMode bool)
 	// if repo is empty they want to have the gitea-pages repo
 	if repo == "" {
 		repo = c.giteapages
-		filepath = "index.html"
 	}
 
 	// if filepath is empty they want to have the index.html

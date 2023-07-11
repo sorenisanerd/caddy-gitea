@@ -10,6 +10,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -32,6 +33,7 @@ type Middleware struct {
 	GiteaPages         string        `json:"gitea_pages,omitempty"`
 	GiteaPagesAllowAll string        `json:"gitea_pages_allowall,omitempty"`
 	Domain             string        `json:"domain,omitempty"`
+	Logger             *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -46,6 +48,7 @@ func (Middleware) CaddyModule() caddy.ModuleInfo {
 func (m *Middleware) Provision(ctx caddy.Context) error {
 	var err error
 	m.Client, err = gitea.NewClient(m.Server, m.Token, m.GiteaPages, m.GiteaPagesAllowAll)
+	m.Logger = ctx.Logger() // g.logger is a *zap.Logger
 
 	return err
 }
@@ -82,6 +85,11 @@ func (m Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhtt
 	var owner, repo, filePath string
 
 	owner, repo, filePath, ref := m.inferOwnerRepoPathAndRef(r)
+	m.Logger.Sugar().Infow("inferred info",
+		"owner", owner,
+		"repo", repo,
+		"filePath", filePath,
+		"ref", ref)
 
 	f, err := m.Client.Open(owner, repo, filePath, ref, m.Domain == "")
 	if err != nil {
